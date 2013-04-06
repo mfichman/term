@@ -1,0 +1,6 @@
+#!/bin/sh
+
+osascript -e 'tell application "Terminal" to activate' 
+osascript -e 'tell application "System Events" to tell process "Terminal" to keystroke "t" using command down'
+cmd="tell application \"Terminal\" to do script \"$@\" in selected tab of the front window"
+osascript -e "$cmd"

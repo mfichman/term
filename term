@@ -1,0 +1,143 @@
+#!/usr/bin/python
+# Copyright (c) Matt Fichman
+
+# Manages remote terminal sessions using screen
+
+import subprocess
+import pickle
+import optparse
+import sys
+import time
+import os
+
+class Config(object):
+    __slot__ = ("session", "default")
+
+    def __init__(self):
+        self.session = {}
+        self.default = "default"
+
+class Session(object):
+    __slot__ = ("name", "screen")
+    
+    def __init__(self, name):
+        self.name = name
+        self.screen = {}
+
+class Screen(object):
+    __slot__ = ("name", "uri")
+
+    def __init__(self, uri):
+        self.name = str(time.time())
+        self.uri = uri
+
+def load():
+    try:
+        fd = open(os.path.join(os.path.expanduser("~"), ".term"), "r") 
+        return pickle.load(fd)
+    except IOError:
+        return Config()
+
+def save(config):
+    fd = open(os.path.join(os.path.expanduser("~"), ".term"), "w") 
+    pickle.dump(config, fd)
+    fd.close()
+
+def newtab(session, screen):
+    cmd = ["termosx", "term", "ssh", session.name, screen.name]
+    subprocess.call(cmd)
+
+def ssh(args):
+    config = load()
+    session = config.session[args[0]]
+    screen = session.screen[args[1]]
+    cmd = ["ssh", screen.uri, "-t", "screen -R -q -S s%s" % screen.name]
+    print(" ".join(cmd))
+    pd = subprocess.Popen(cmd, stdout=subprocess.PIPE)
+    last = ""
+    cur = ""
+    while True:
+        ch = pd.stdout.read(1)
+        cur += ch
+        if ch == "":
+            break
+        elif ch == "\n":
+            last = cur
+            cur = ""
+        sys.stdout.write(ch)
+    ret = pd.communicate()
+    if ret != 0 or last.strip() == "[screen is terminating]":
+        del session.screen[screen.name]
+    save(config)
+
+def connect(args):
+    config = load()
+    parser = optparse.OptionParser(usage="""Usage: %prog connect URI""")
+    parser.add_option("-s", "--session", default=config.default)
+    parser.add_option("-n", "--name", default=str(time.time()))
+    (opts, args) = parser.parse_args(args)
+    if len(args) < 1:
+        parser.error("not enough arguments")
+    uri = args[0]
+    if not opts.session in config.session:
+        config.session[opts.session] = Session(opts.session)
+    session = config.session[opts.session]
+    screen = Screen(uri)
+    session.screen[screen.name] = screen
+    save(config)
+    newtab(session, screen)
+    save(config)
+
+def show(args):
+    parser = optparse.OptionParser(usage="""Usage: %prog show""")
+    (opts, args) = parser.parse_args(args)
+    config = load()
+    for session in config.session.itervalues():
+        for screen in session.screen.itervalues():
+            print("%s, %s, %s" % (session.name, screen.name, screen.uri))
+
+def restore(args):
+    parser = optparse.OptionParser(usage="""Usage: %prog restore""")
+    (opts, args) = parser.parse_args(args)
+    config = load()
+    name = config.default
+    session = config.session[name]
+    for screen in session.screen.values():
+        newtab(session, screen)
+    save(config)
+
+def session(args):
+    parser = optparse.OptionParser(usage="""Usage: %prog session NAME""")
+    (opts, args) = parser.parse_args(args)
+    if len(args) < 1:
+        parser.error("not enough arguments")
+    name = args[0]
+    config = load()
+    if not name in config.session:
+        config.session[name] = Session(name)
+    config.default = name
+    save(config)
+
+def main():
+    parser = optparse.OptionParser(usage="""Usage: %prog COMMAND""")
+    (opts, args) = parser.parse_args()
+    if len(args) < 1:
+        parser.error("not enough arguments")
+    cmd = args[0]
+    if cmd == "show":   
+        args = args[1:]
+        show(args)
+    elif cmd == "restore":
+        args = args[1:]
+        restore(args)
+    elif cmd == "session":
+        args = args[1:]
+        session(args)
+    elif cmd == "ssh":
+        args = args[1:]
+        ssh(args)
+    else:
+        connect(args)
+
+if __name__ == "__main__":
+    main()
