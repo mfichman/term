@@ -1,5 +1,8 @@
 Terminal session manager.  Keeps track of all your screen sessions, and reopens them.
 
+MANUAL
+------
+
 Create a new session:
 
 ```
